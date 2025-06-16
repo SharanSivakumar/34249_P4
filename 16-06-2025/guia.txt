@@ -1,0 +1,11 @@
+make build  compile ddos_guard.p4
+
+make setup  create / bring-up the veth pair
+
+make run  start BMv2 in the background
+
+make test  launch the Python script (send_packets.py)
+
+make stop  kill the switch and running tcpdump / traffic tools
+
+make clean remove JSON, p4info and the veth pair
