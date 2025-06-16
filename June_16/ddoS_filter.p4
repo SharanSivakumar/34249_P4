@@ -84,14 +84,15 @@ control MyIngress(inout headers hdr,
     }
 
     action allow() {
-        // no-op
+        // Do nothing (permit packet)
     }
 
     action count_packet() {
         bit<32> count;
-        pkt_count.read(count, hdr.ip.srcAddr);
+        bit<32> index = hdr.ip.srcAddr & 0x3FF;  // Lower 10 bits
+        pkt_count.read(count, index);
         count = count + 1;
-        pkt_count.write(hdr.ip.srcAddr, count);
+        pkt_count.write(index, count);
     }
 
     table blacklist_check {
@@ -120,21 +121,25 @@ control MyIngress(inout headers hdr,
 
     apply {
         if (hdr.ip.isValid() && hdr.tcp.isValid()) {
+            // Early DDoS mitigation check
+            bit<32> count;
+            bit<32> index = hdr.ip.srcAddr & 0x3FF;
+            pkt_count.read(count, index);
+            if (count > DDOS_THRESHOLD) {
+                mark_to_drop(smeta);
+                return;
+            }
+
+            // Proceed with blacklist and port checks
             blacklist_check.apply();
             allowed_ports.apply();
 
-            // Count packets from source IP
+            // Count the packet
             count_packet();
-
-            // Re-read to check threshold
-            bit<32> count;
-            pkt_count.read(count, hdr.ip.srcAddr);
-            if (count > DDOS_THRESHOLD) {
-                mark_to_drop(smeta);
-            }
         }
     }
 }
+
 
 control MyEgress(inout headers hdr, inout metadata meta, inout standard_metadata_t smeta) {
     apply { }
