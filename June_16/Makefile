@@ -1,8 +1,8 @@
 # -------- Makefile for ddos_guard demo -----------------------
 
-P4SRC      := ddos_guard.p4
-JSON       := ddos_guard.json
-P4INFO     := ddos_guard.p4info
+P4SRC      := ddos_filter.p4
+JSON       := ddos_filter.json
+P4INFO     := ddos_filter.p4info
 SWITCH_BIN := simple_switch
 P4C        := p4c-bm2-ss          # change to plain p4c if you prefer
 PORT0      := veth0
