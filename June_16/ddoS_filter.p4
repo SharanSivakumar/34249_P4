@@ -1,9 +1,9 @@
 #include <core.p4>
 #include <v1model.p4>
 
-const bit<32> DDOS_THRESHOLD = 5;
-
-typedef bit<9>  egressSpec_t;
+const bit<32> GLOBAL_DDOS_THRESHOLD = 5;
+const bit<32> SYN_FLOOD_THRESHOLD = 20;
+typedef bit<9> egressSpec_t;
 
 header ethernet_t {
     bit<48> dstAddr;
@@ -12,15 +12,15 @@ header ethernet_t {
 }
 
 header ipv4_t {
-    bit<4>  version;
-    bit<4>  ihl;
-    bit<8>  diffserv;
+    bit<4> version;
+    bit<4> ihl;
+    bit<8> diffserv;
     bit<16> totalLen;
     bit<16> identification;
-    bit<3>  flags;
+    bit<3> flags;
     bit<13> fragOffset;
-    bit<8>  ttl;
-    bit<8>  protocol;
+    bit<8> ttl;
+    bit<8> protocol;
     bit<16> hdrChecksum;
     bit<32> srcAddr;
     bit<32> dstAddr;
@@ -31,23 +31,36 @@ header tcp_t {
     bit<16> dstPort;
     bit<32> seqNo;
     bit<32> ackNo;
-    bit<4>  dataOffset;
-    bit<4>  res;
-    bit<8>  flags;
+    bit<4> dataOffset;
+    bit<4> res;
+    bit<8> flags;
     bit<16> window;
     bit<16> checksum;
     bit<16> urgentPtr;
 }
 
-struct headers {
-    ethernet_t eth;
-    ipv4_t     ip;
-    tcp_t      tcp;
+header udp_t {
+    bit<16> srcPort;
+    bit<16> dstPort;
+    bit<16> len;
+    bit<16> checksum;
 }
 
-struct metadata {}
+struct headers {
+    ethernet_t eth;
+    ipv4_t ip;
+    tcp_t tcp;
+    udp_t udp;
+}
 
-register<bit<32>>(1024) pkt_count;
+struct metadata {
+    bit<16> l4_dstPort;
+}
+
+register<bit<32>>(1024) ip_pkt_cnt;
+register<bit<32>>(1024) ip_syn_cnt;
+register<bit<32>>(1024) port_thresh;
+register<bit<1>>(1) blackhole_flag;
 
 parser MyParser(packet_in packet,
                 out headers hdr,
@@ -65,12 +78,18 @@ parser MyParser(packet_in packet,
         packet.extract(hdr.ip);
         transition select(hdr.ip.protocol) {
             6: parse_tcp;
+            17: parse_udp;
             default: accept;
         }
     }
 
     state parse_tcp {
         packet.extract(hdr.tcp);
+        transition accept;
+    }
+
+    state parse_udp {
+        packet.extract(hdr.udp);
         transition accept;
     }
 }
@@ -84,73 +103,113 @@ control MyIngress(inout headers hdr,
     }
 
     action allow() {
-        // Do nothing (permit packet)
+        // Do nothing
     }
 
-    action count_packet() {
-        bit<32> count;
-        bit<32> index = hdr.ip.srcAddr & 0x3FF;  // Lower 10 bits
-        pkt_count.read(count, index);
-        count = count + 1;
-        pkt_count.write(index, count);
+    action count_ip() {
+        bit<32> c;
+        bit<32> idx = hdr.ip.srcAddr & 0x3FF;
+        ip_pkt_cnt.read(c, idx);
+        ip_pkt_cnt.write(idx, c + 1);
+    }
+
+    action count_syn() {
+        bit<32> c;
+        bit<32> idx = hdr.ip.srcAddr & 0x3FF;
+        ip_syn_cnt.read(c, idx);
+        ip_syn_cnt.write(idx, c + 1);
+    }
+
+    action alert_digest() {
+        digest(0, { hdr.ip.srcAddr });
+    }
+
+    table whitelist {
+        key = { hdr.ip.srcAddr : exact; }
+        actions = { allow; }
+        size = 64;
+        default_action = allow();
     }
 
     table blacklist_check {
-        key = {
-            hdr.ip.srcAddr: exact;
-        }
-        actions = {
-            drop;
-            allow;
-        }
+        key = { hdr.ip.srcAddr : exact; }
+        actions = { drop; allow; }
         size = 64;
         default_action = allow();
     }
 
     table allowed_ports {
-        key = {
-            hdr.tcp.dstPort: exact;
-        }
-        actions = {
-            drop;
-            allow;
-        }
+        key = { meta.l4_dstPort : exact; }
+        actions = { allow; drop; }
         size = 32;
         default_action = drop();
     }
 
     apply {
-        if (hdr.ip.isValid() && hdr.tcp.isValid()) {
-            // Early DDoS mitigation check
-            bit<32> count;
-            bit<32> index = hdr.ip.srcAddr & 0x3FF;
-            pkt_count.read(count, index);
-            if (count > DDOS_THRESHOLD) {
-                mark_to_drop(smeta);
+        if (!hdr.ip.isValid()) return;
+
+        bit<32> ip_idx = hdr.ip.srcAddr & 0x3FF;
+
+        if (hdr.tcp.isValid()) {
+            meta.l4_dstPort = hdr.tcp.dstPort;
+        } else if (hdr.udp.isValid()) {
+            meta.l4_dstPort = hdr.udp.dstPort;
+        } else {
+            meta.l4_dstPort = 0;
+        }
+
+        bit<1> bh;
+        blackhole_flag.read(bh, 0);
+        if (bh == 1w1) {
+            drop();
+            return;
+        }
+
+        if (whitelist.apply().hit) {
+            count_ip();
+            return;
+        }
+
+        if (blacklist_check.apply().hit) {
+            return;
+        }
+
+        bit<32> pcount;
+        ip_pkt_cnt.read(pcount, ip_idx);
+
+        bit<32> thresh;
+        bit<32> p_idx = (bit<32>) meta.l4_dstPort & 0x3FF;
+        port_thresh.read(thresh, p_idx);
+        if (thresh == 0) {
+            thresh = GLOBAL_DDOS_THRESHOLD;
+        }
+
+        if (pcount >= thresh) {
+            alert_digest();
+            drop();
+            return;
+        }
+
+        if (hdr.tcp.isValid() && hdr.tcp.flags == 0x02) {
+            count_syn();
+            bit<32> scount;
+            ip_syn_cnt.read(scount, ip_idx);
+            if (scount >= SYN_FLOOD_THRESHOLD) {
+                alert_digest();
+                drop();
                 return;
             }
-
-            // Proceed with blacklist and port checks
-            blacklist_check.apply();
-            allowed_ports.apply();
-
-            // Count the packet
-            count_packet();
         }
+
+        allowed_ports.apply();
+        count_ip();
     }
 }
 
-
-control MyEgress(inout headers hdr, inout metadata meta, inout standard_metadata_t smeta) {
+control MyEgress(inout headers hdr,
+                 inout metadata meta,
+                 inout standard_metadata_t smeta) {
     apply { }
-}
-
-control MyDeparser(packet_out packet, in headers hdr) {
-    apply {
-        packet.emit(hdr.eth);
-        packet.emit(hdr.ip);
-        packet.emit(hdr.tcp);
-    }
 }
 
 control MyVerifyChecksum(inout headers hdr, inout metadata meta) {
@@ -159,6 +218,15 @@ control MyVerifyChecksum(inout headers hdr, inout metadata meta) {
 
 control MyComputeChecksum(inout headers hdr, inout metadata meta) {
     apply { }
+}
+
+control MyDeparser(packet_out packet, in headers hdr) {
+    apply {
+        packet.emit(hdr.eth);
+        packet.emit(hdr.ip);
+        packet.emit(hdr.tcp);
+        packet.emit(hdr.udp);
+    }
 }
 
 V1Switch(
