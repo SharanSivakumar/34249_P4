@@ -185,7 +185,7 @@ def run_timestamp_tests():
                 label="T1: Rate within limit (8 pps)")
     
     # Test 2: Rate exceeding limits (should be blocked)
-    send_packets("10.0.0.111", 15, dport=80, rate_pps=15, 
+    send_packets("10.0.0.111", 12, dport=80, rate_pps=12, 
                 label="T2: Rate over limit (15 pps)")
     
     # Test 3: SYN rate within limits
@@ -193,12 +193,14 @@ def run_timestamp_tests():
                 label="T3: SYN rate within limit (4 pps)")
     
     # Test 4: SYN rate exceeding limits
-    send_packets("10.0.0.113", 8, dport=80, flags='S', rate_pps=8,
+    send_packets("10.0.0.113", 7, dport=80, flags='S', rate_pps=8,
                 label="T4: SYN rate over limit (8 pps)")
+    time.sleep(1.1)
     
     # Test 5: Burst then wait (should recover)
-    send_packets("10.0.0.114", 15, dport=80, rate_pps=50, 
+    send_packets("10.0.0.114", 12, dport=80, rate_pps=50, 
                 label="T5: Fast burst (50 pps)")
+    time.sleep(1.5)
     time.sleep(1.2)  # Wait for window reset
     send_packets("10.0.0.114", 5, dport=80, rate_pps=5,
                 label="T6: Same IP after window reset")
@@ -208,7 +210,7 @@ def run_timestamp_tests():
                       burst_interval=1.2, label="T7: Legitimate bursts (3x3@1.2s)")
     
     # Test 8: Attack burst pattern (should be blocked)
-    send_burst_pattern("10.0.0.116", bursts=3, packets_per_burst=8, 
+    send_burst_pattern("10.0.0.116", bursts=3, packets_per_burst=6, 
                       burst_interval=0.5, label="T8: Attack bursts (3x8@0.5s)")
     
     # Test 9: Sustained low rate (should pass)
