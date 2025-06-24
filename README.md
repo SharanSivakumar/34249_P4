@@ -33,4 +33,17 @@ To run this setup, you need to copy the contents of the `./V1_Model_Approach` fo
 
 ### 2. **TNA Architecture on Tofino**
 
-**TBD**
+This section details the setup and operation of the TNA approach using the Intel Tofino SDE for the Nix package manager.
+
+#### **Setup Instructions**
+
+To run this setup, you need to import the `./ddos_filter_tna.p4` file into the Tofino switch, which can be done either directly using a USB drive, or remotely using "ssh".
+
+#### **Compiling Commands**
+
+Once the file is on the switch, it can be compiled by running the following commands:
+- **`sde-env-9.13.4`** _ where "9.13.4" is the SDE version. This command enters the SDE.
+- **`p4_build.sh ddos_filter_tna.p4`** _ Compiles the specified p4 file.
+- **`run_switchd.sh -p ddos_filter_tna`** _ Runs the specified p4 file.
+
+---
