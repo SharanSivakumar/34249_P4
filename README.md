@@ -3,10 +3,10 @@
 
 ## P4 Projects: V1 Model Approach & TNA Architecture
 
-This repository contains two distinct P4 projects:
+This repository contains two approaches to achieve DDoS Mitigation through Dataplane programming using P4 :
 
 1. **V1 Model Approach**: An implementation designed for the BMv2 software switch using the `v1model` architecture.  
-2. **TNA Architecture on Tofino**:
+2. **TNA Architecture on Tofino**: An implementation designed for the Intel Tofino switch using the `TNA` architecture.
 
 ---
 
