@@ -11,9 +11,9 @@ import time
 SEND_IFACE = "veth0"     # ingress
 RECV_IFACE = "veth1"     # egress
 
-SRC_SLOW   = "1.1.1.1"
-SRC_FLOOD  = "2.2.2.2"
-DST_IP     = "5.5.5.5"
+SRC_SLOW   = "10.0.0.100"
+SRC_FLOOD  = "10.0.0.100"
+DST_IP     = "10.0.0.2"
 DST_MAC    = "bb:bb:bb:bb:bb:bb"
 
 def capture_and_send(src_ip, count, inter, timeout):
