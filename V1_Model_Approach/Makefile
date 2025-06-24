@@ -29,7 +29,7 @@ setup:
 	sudo ip link set $(PORT1) up
 	@echo "veth interfaces configured and active"
 
-run: build setup
+run_all: build setup
 	@echo "Starting BMv2 switch..."
 	-@sudo pkill $(SWITCH_BIN) 2>/dev/null || true
 	sudo $(SWITCH_BIN) -i 0@$(PORT0) -i 1@$(PORT1) $(JSON) \
@@ -70,5 +70,5 @@ clean: stop
 	-@rm -f $(JSON) $(P4INFO)
 	@echo "Workspace cleaned"
 
-run_all: clean build setup run config test
+run: clean build setup run_all config test
 	@echo "All setup and test steps completed successfully"
